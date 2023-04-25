@@ -1,10 +1,10 @@
 import os
-import shutil
 from PIL import Image
 
 import torch.utils.data
 import torchvision.transforms as T
-from torchvision.transforms import Compose, ToTensor, Resize, RandomEqualize, GaussianBlur
+from torchvision.transforms import Compose, ToTensor, Resize, RandomEqualize, RandomChoice, GaussianBlur, \
+    RandomAutocontrast
 from torchvision.datasets.utils import download_and_extract_archive
 
 
@@ -12,9 +12,20 @@ def get_files(root_dir):
     return [os.path.join(root_dir, x) for x in os.listdir(root_dir) if x.endswith(".png")]
 
 
+class GetYChannel:
+    def __call__(self, img):
+        return img.convert("YCbCr").split()[0]
+
+
+# class ConvertToRGB:
+#     def __call__(self, img):
+#         return img.convert("RGB")
+
+
 class DIV2K(torch.utils.data.Dataset):
 
-    def __init__(self, scale_factor=2, image_size=256, train=True, data_dir="data", augment_lr=False, augment_hr=False):
+    def __init__(self, scale_factor=2, image_size=256, train=True, data_dir="data", augment_lr=False,
+                 convert_ycbcr=True):
         self.scale_factor = scale_factor
         self.image_size = image_size
         self.train = train
@@ -31,8 +42,10 @@ class DIV2K(torch.utils.data.Dataset):
 
         self.file_names = get_files(self.img_dir)
 
+        self.convert_ycbcr = convert_ycbcr
+
         self.lr_transforms = self.get_lr_transforms() if not augment_lr else self.get_lr_augment_transforms()
-        self.hr_transforms = self.get_hr_transforms() if not augment_hr else self.get_hr_augment_transforms()
+        self.hr_transforms = self.get_hr_transforms()
 
     def get_lr_transforms(self):
         return Compose(
@@ -44,6 +57,7 @@ class DIV2K(torch.utils.data.Dataset):
                     ),
                     interpolation=T.InterpolationMode.BICUBIC,
                 ),
+                GetYChannel() if self.convert_ycbcr else torch.nn.Identity(),
                 ToTensor(),
             ]
         )
@@ -55,6 +69,7 @@ class DIV2K(torch.utils.data.Dataset):
                     (self.image_size, self.image_size),
                     T.InterpolationMode.BICUBIC,
                 ),
+                GetYChannel() if self.convert_ycbcr else torch.nn.Identity(),
                 ToTensor(),
             ]
         )
@@ -62,6 +77,15 @@ class DIV2K(torch.utils.data.Dataset):
     def get_lr_augment_transforms(self):
         return Compose(
             [
+                RandomChoice(
+                    [
+
+                        RandomEqualize(p=1),
+                        GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+                        RandomAutocontrast(p=1),
+                    ],
+                    p=(.5, .5, .5),
+                ),
                 Resize(
                     size=(
                         self.image_size // self.scale_factor,
@@ -69,21 +93,7 @@ class DIV2K(torch.utils.data.Dataset):
                     ),
                     interpolation=T.InterpolationMode.BICUBIC,
                 ),
-                RandomEqualize(),
-                GaussianBlur(kernel_size=5),
-                ToTensor(),
-            ]
-        )
-
-    def get_hr_augment_transforms(self):
-        return Compose(
-            [
-                Resize(
-                    (self.image_size, self.image_size),
-                    T.InterpolationMode.BICUBIC,
-                ),
-                RandomEqualize(),
-                GaussianBlur(kernel_size=5),
+                GetYChannel() if self.convert_ycbcr else torch.nn.Identity(),
                 ToTensor(),
             ]
         )
@@ -119,7 +129,7 @@ def visualize(lr_img, hr_img):
     plt.show()
 
 
-def visualize_augmentation(lr_img, hr_img, lr_aug_img, hr_aug_img):
+def visualize_augmentation(lr_img, hr_img, lr_aug_img):
     fig, (ax1, ax2) = plt.subplots(2, 2)
     ax1[0].imshow(lr_img.squeeze(0).permute(1, 2, 0))
     ax1[0].set_title('Low resolution')
@@ -130,16 +140,13 @@ def visualize_augmentation(lr_img, hr_img, lr_aug_img, hr_aug_img):
     ax1[1].imshow(lr_aug_img.squeeze(0).permute(1, 2, 0))
     ax1[1].set_title('Low resolution augmented')
     ax1[1].set_axis_off()
-    ax2[1].imshow(hr_aug_img.squeeze(0).permute(1, 2, 0))
-    ax2[1].set_title('High resolution augmented')
-    ax2[1].set_axis_off()
     plt.show()
 
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    train_dataset = DIV2K()
+    train_dataset = DIV2K(convert_ycbcr=False)
     train_dataloader = torch.utils.data.DataLoader(train_dataset)
     img_counter = 0
     for lr_img, hr_img in train_dataloader:
@@ -148,12 +155,11 @@ if __name__ == "__main__":
         visualize(lr_img, hr_img)
         img_counter += 1
 
-    val_dataset = DIV2K(train=False)
+    val_dataset = DIV2K(train=False, convert_ycbcr=False)
     val_dataloader = torch.utils.data.DataLoader(val_dataset)
 
-    val_aug_dataset = DIV2K(train=False, augment_hr=True, augment_lr=True)
+    val_aug_dataset = DIV2K(train=False, augment_lr=True, convert_ycbcr=False)
     val_aug_dataloader = torch.utils.data.DataLoader(val_aug_dataset)
     lr_img, hr_img = val_dataloader.__iter__().__next__()
     lr_aug_img, hr_aug_img = val_aug_dataloader.__iter__().__next__()
-    visualize_augmentation(lr_img, hr_img, lr_aug_img, hr_aug_img)
-
+    visualize_augmentation(lr_img, hr_img, lr_aug_img)
