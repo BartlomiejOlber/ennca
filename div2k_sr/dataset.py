@@ -46,6 +46,7 @@ class DIV2K(torch.utils.data.Dataset):
 
         self.lr_transforms = self.get_lr_transforms() if not augment_lr else self.get_lr_augment_transforms()
         self.hr_transforms = self.get_hr_transforms()
+        self.y_channel_transforms = self.get_y_channel_transforms()
 
     def get_lr_transforms(self):
         return Compose(
@@ -57,7 +58,21 @@ class DIV2K(torch.utils.data.Dataset):
                     ),
                     interpolation=T.InterpolationMode.BICUBIC,
                 ),
-                GetYChannel() if self.convert_ycbcr else torch.nn.Identity(),
+                ToTensor(),
+            ]
+        )
+
+    def get_y_channel_transforms(self):
+        return Compose(
+            [
+                Resize(
+                    size=(
+                        self.image_size // self.scale_factor,
+                        self.image_size // self.scale_factor,
+                    ),
+                    interpolation=T.InterpolationMode.BICUBIC,
+                ),
+                GetYChannel(),
                 ToTensor(),
             ]
         )
@@ -69,7 +84,6 @@ class DIV2K(torch.utils.data.Dataset):
                     (self.image_size, self.image_size),
                     T.InterpolationMode.BICUBIC,
                 ),
-                GetYChannel() if self.convert_ycbcr else torch.nn.Identity(),
                 ToTensor(),
             ]
         )
@@ -99,10 +113,12 @@ class DIV2K(torch.utils.data.Dataset):
         )
 
     def __getitem__(self, idx):
-        lr = Image.open(self.file_names[idx]).convert("RGB")
-        hr = lr.copy()
-        lr = self.lr_transforms(lr)
-        hr = self.hr_transforms(hr)
+        img = Image.open(self.file_names[idx]).convert("RGB")
+        lr = self.lr_transforms(img)
+        hr = self.hr_transforms(img)
+        if self.convert_ycbcr:
+            y_channel = self.y_channel_transforms(img)
+            return lr, hr, y_channel
         return lr, hr
 
     def __len__(self):

@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torchvision.transforms.transforms
 from torch.nn import functional as F
 import torch
 import torchvision.transforms as transforms
@@ -8,13 +9,12 @@ from bifpn import BiFPN
 from resnet import ResNet
 
 
-def inference(model, lr_img: Image.Image, hr_size: tuple[int, int]):
-    channels = lr_img.convert("YCbCr").split()
-    pred_channel_y = model(channels[0])
+def inference(model, y_channel: torch.Tensor, lr_img: Image.Image, hr_size: tuple[int, int]):
+    pred_channel_y = model(y_channel)
     transform = transforms.Resize(size=hr_size)
     interpolated_img = transform(lr_img)
     interpolated_channels = list(interpolated_img.convert("YCbCr").split())
-    interpolated_channels[0] = pred_channel_y
+    interpolated_channels[0] = transforms.ToPILImage()(pred_channel_y[0])
     pred_hr_img = Image.merge('YCbCr', tuple(interpolated_channels))
     return pred_hr_img.convert("RGB")
 
@@ -68,3 +68,12 @@ if __name__ == "__main__":
     data = torch.ones((2, 1, 128, 128))
     out = model(data)
     print(data.shape, out.shape)
+
+    # test whole SR inference
+    from dataset import DIV2K
+    dataset = DIV2K(convert_ycbcr=True)
+    dataloader = torch.utils.data.DataLoader(dataset)
+    lr_img, _, y_channel = dataloader.__iter__().__next__()
+    pillow_lr_img = torchvision.transforms.transforms.ToPILImage()(lr_img[0])
+    pred_hr = inference(model=model, y_channel=y_channel, lr_img=pillow_lr_img, hr_size=(dataset.image_size, dataset.image_size))
+    print(pred_hr)

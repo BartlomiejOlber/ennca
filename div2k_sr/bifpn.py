@@ -184,7 +184,7 @@ class BiFPN(nn.Module):
         self.conv4_down = SeparableConvBlock(num_channels, onnx_export=onnx_export)
         self.conv5_down = SeparableConvBlock(num_channels, onnx_export=onnx_export)
         self.conv6_down = SeparableConvBlock(num_channels, onnx_export=onnx_export)
-        self.conv7_down = SeparableConvBlock(num_channels, onnx_export=onnx_export)
+        self.conv7_down = SeparableConvBlock(num_channels, onnx_export=onnx_export, norm=False)
         if use_p8:
             self.conv7_up = SeparableConvBlock(num_channels, onnx_export=onnx_export)
             self.conv8_down = SeparableConvBlock(num_channels, onnx_export=onnx_export)
@@ -472,5 +472,8 @@ if __name__ == "__main__":
     c1 = torch.randn([1, 128, 64, 64])
     c2 = torch.randn([1, 256, 32, 32])
     c3 = torch.randn([1, 512, 16, 16])
+    c1 = torch.randn([1, 128, 16, 16])
+    c2 = torch.randn([1, 256, 8, 8])
+    c3 = torch.randn([1, 512, 4, 4])
     c1, c2, c3, c4, c5 = bifpn([c1, c2, c3])
     print(c1.shape, c2.shape, c3.shape, c4.shape, c5.shape)
